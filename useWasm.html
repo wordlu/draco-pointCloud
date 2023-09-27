@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>draco + wasm</title>
+  </head>
+  <body></body>
+</html>
+
+<script src="https://www.gstatic.com/draco/versioned/decoders/1.4.1/draco_wasm_wrapper.js">
+  // It is recommended to always pull your Draco JavaScript and WASM decoders
+  // from the above URL. Users will benefit from having the Draco decoder in
+  // cache as more sites start using the static URL.
+</script>
+
+<script>
+      'use strict';
+
+  // The global Draco decoder module.
+  let decoderModule = null;
+
+  // Creates the Draco decoder module.
+  function createDracoDecoderModule() {
+    let dracoDecoderType = {};
+
+    // Callback when the Draco decoder module is fully instantiated. The
+    // module parameter is the created Draco decoder module.
+    dracoDecoderType['onModuleLoaded'] = function(module) {
+      decoderModule = module;
+
+      // Download the Draco encoded file and decode.
+      // downloadEncodedMesh('out.drc');
+      downloadEncodedMesh('bak.drc');
+    };
+    DracoDecoderModule(dracoDecoderType);
+  }
+
+
+  // Decode an encoded Draco mesh. byteArray is the encoded mesh as
+    // an Uint8Array.
+    function decodeMesh(byteArray) {
+      // Create the Draco decoder.
+      const decoder = new decoderModule.Decoder();
+
+      // Create a buffer to hold the encoded data.
+      const buffer = new decoderModule.DecoderBuffer();
+      buffer.Init(byteArray, byteArray.length);
+
+      // Decode the encoded geometry.
+      let outputGeometry = new decoderModule.Mesh();
+
+      let t = new Date().getTime()
+      // let decodingStatus = decoder.DecodeBufferToMesh(buffer, outputGeometry);
+      let decodingStatus = decoder.DecodeBufferToPointCloud(buffer, outputGeometry);
+
+      console.log(new Date().getTime() - t)
+
+      alert('Num points = ' + outputGeometry.num_points());
+
+      // You must explicitly delete objects created from the DracoModule
+      // or Decoder.
+      decoderModule.destroy(outputGeometry);
+      decoderModule.destroy(decoder);
+      decoderModule.destroy(buffer);
+    }
+
+
+     // Download and decode the Draco encoded geometry.
+     function downloadEncodedMesh(filename) {
+      // Download the encoded file.
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", filename, true);
+      xhr.responseType = "arraybuffer";
+      xhr.onload = function(event) {
+        const arrayBuffer = xhr.response;
+        if (arrayBuffer) {
+          const byteArray = new Uint8Array(arrayBuffer);
+          decodeMesh(byteArray);
+        }
+      };
+      xhr.send(null);
+    }
+
+
+    createDracoDecoderModule();
+</script>

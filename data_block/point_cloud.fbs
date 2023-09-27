@@ -1,0 +1,42 @@
+// Schema of point cloud like the structure sensor_msg::PointCloud2.
+
+include "header.fbs";
+
+namespace ld_data;
+
+enum DataType:uint8 {
+    INT8 = 1,
+    UINT8 = 2,
+    INT16 = 3,
+    UINT16 = 4,
+    INT32 = 5,
+    UINT32 = 6,
+    FLOAT32 = 7,
+    FLOAT64 = 8,
+    INT64 = 9,
+    UINT64 = 10,
+}
+
+table Field {
+name:
+    string;  // such as "x","y","z","intensity" ...
+offset:
+    uint32;  // Offset from start of point struct
+data_type:
+    DataType = 1;
+count:
+    uint32;  // ?
+}
+
+table PointCloud {
+    header:Header;
+    fields:[Field];    
+    shape : string;
+    is_bigendian : int8;
+    compression_info : string;
+    data:[int8];
+}
+root_type Field;
+root_type PointCloud;
+
+

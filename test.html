@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>draco + threejs</title>
+  </head>
+
+  <!-- <script src="https://cdn.rawgit.com/mrdoob/three.js/dev/build/three.min.js"></script>
+  <script src="https://rawgit.com/google/draco/master/javascript/example/DRACOLoader.js"></script> -->
+
+  <script src="./three.min.js"></script>
+  <script src="./DRACOLoader.js"></script>
+
+  <!-- <script src="https://www.gstatic.com/draco/versioned/decoders/1.4.1/draco_wasm_wrapper.js"></script> -->
+
+  <script>
+    // three.js globals.
+    var camera, scene, renderer;
+
+
+    let dracoDecoderType = {};
+    var dracoLoader = null;
+    var decoderModule = null
+
+    // Callback when the Draco decoder module is fully instantiated. The
+    // module parameter is the created Draco decoder module.
+    // dracoDecoderType['onModuleLoaded'] = function(module) {
+    //     decoderModule = module;
+
+    //   // Download the Draco encoded file and decode.
+    // //   downloadEncodedMesh('out.drc');
+    // };
+    // DracoDecoderModule(dracoDecoderType);
+
+
+
+    // Create the Draco loader.
+    var dracoLoader = new THREE.DRACOLoader();
+
+
+
+    // Specify path to a folder containing WASM/JS decoding libraries.
+    // It is recommended to always pull your Draco JavaScript and WASM decoders
+    // from the below URL. Users will benefit from having the Draco decoder in
+    // cache as more sites start using the static URL.
+
+    // dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.4.1/');
+    dracoLoader.setDecoderPath('./');
+    dracoLoader.setDecoderConfig({ type: "js" })
+    dracoLoader.preload()
+
+
+    function initThreejs() {
+      camera = new THREE.PerspectiveCamera( 35, window.innerWidth / window.innerHeight, 0.1, 15 );
+      camera.position.set( 0, 0, 3 );
+
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color( 0x443333 );
+      scene.fog = new THREE.Fog( 0xffffff, 2, 15 );
+
+      // Ground
+      var plane = new THREE.Mesh(
+        new THREE.PlaneBufferGeometry( 8, 8 ),
+        new THREE.MeshPhongMaterial( { color: 0x999999, specular: 0x101010 } )
+      );
+      plane.rotation.x = - Math.PI / 2;
+      plane.position.y = 0.03;
+      plane.receiveShadow = true;
+    //   plane.scale.set(0.01,0.01,0.01)
+    //   scene.add(plane);
+
+      // Lights
+      var light = new THREE.HemisphereLight( 0x443333, 0x111122 );
+      scene.add( light );
+
+      var light = new THREE.SpotLight();
+      light.angle = Math.PI / 16;
+      light.penumbra = 0.5;
+      light.castShadow = true;
+      light.position.set( - 1, 1, 1 );
+      scene.add( light );
+
+      // renderer
+      renderer = new THREE.WebGLRenderer( { antialias: true } );
+      renderer.setPixelRatio( window.devicePixelRatio );
+      renderer.setSize( window.innerWidth, window.innerHeight );
+      renderer.shadowMap.enabled = true;
+
+      const container = document.getElementById('container');
+      container.appendChild( renderer.domElement );
+
+      window.addEventListener( 'resize', onWindowResize, false );
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+
+      renderer.setSize( window.innerWidth, window.innerHeight );
+    }
+
+    function animate() {
+      render();
+      requestAnimationFrame( animate );
+    }
+
+    function render() {
+      var timer = Date.now() * 0.0003;
+
+      camera.position.x = Math.sin( timer ) * 0.5;
+      camera.position.z = Math.cos( timer ) * 0.5;
+      camera.lookAt( new THREE.Vector3( 0, 0.1, 0 ) );
+
+      renderer.render( scene, camera );
+    }
+
+
+    function loadDracoMesh(dracoFile) {
+      // const xhr = new XMLHttpRequest();
+      // xhr.open("GET", dracoFile, true);
+      // xhr.responseType = "arraybuffer";
+      // xhr.onload = function(event) {
+      //   const arrayBuffer = xhr.response;
+      //   if (arrayBuffer) {
+      //     const byteArray = new Uint8Array(arrayBuffer);
+
+      //       const decoder = new decoderModule.Decoder();
+
+      //       // Create a buffer to hold the encoded data.
+      //       const buffer = new decoderModule.DecoderBuffer();
+      //       buffer.Init(byteArray, byteArray.length);
+
+      //       // Decode the encoded geometry.
+      //       let outputGeometry = new decoderModule.Mesh();
+      //       let decodingStatus = decoder.DecodeBufferToMesh(buffer, outputGeometry);
+      //       console.log('Num points = ' + outputGeometry.num_points());
+
+
+
+      //       console.log(outputGeometry, decodingStatus)
+
+      //     var material = new THREE.MeshStandardMaterial( { vertexColors: THREE.VertexColors } );
+      //       var mesh = new THREE.Mesh( decodingStatus, material );
+      //       mesh.castShadow = true;
+      //       mesh.receiveShadow = true;
+      //       scene.add( mesh );
+      //   }
+      // };
+      // xhr.send(null);
+
+      dracoLoader.load(
+        dracoFile, 
+        function ( geometry ) {
+          console.log(geometry)
+          // geometry.computeVertexNormals();
+
+          console.log(geometry)
+          var material = new THREE.MeshStandardMaterial( { vertexColors: THREE.VertexColors } );
+          var mesh = new THREE.Mesh( geometry, material );
+          // mesh.castShadow = true;
+          // mesh.receiveShadow = true;
+          mesh.scale.set(0.0001,0.0001,0.0001)
+          scene.add( mesh );
+        }, 
+        // function ( xhr ) {
+        // console.log( ( xhr.loaded / xhr.total * 100 ) + '% loaded' );
+
+        // }, 
+        // function ( error ) {
+        // console.log( 'An error happened' );
+
+        // }
+      );
+    }
+
+
+    window.onload = function() {
+      // const fileInput = document.getElementById('fileInput')
+      // fileInput.onclick = function () {
+      //   this.value = ''
+      // }
+      // fileInput.addEventListener('change', function (e) {
+      //   const file = fileInput.files[0]
+      //   console.log(file)
+      //   const reader = new FileReader()
+      //   reader.onload = function (e) {
+      //     // Enable logging to console output.
+      //     dracoLoader.setVerbosity(1)
+      //     dracoLoader.decodeDracoFile(reader.result, onDecode)
+      //   }
+      //   reader.readAsArrayBuffer(file)
+      // })
+
+
+        setTimeout(()=>{
+            initThreejs();
+            animate();
+            loadDracoMesh('output.drc');
+            // loadDracoMesh('out.drc');
+            // loadDracoMesh('bunny_gltf.drc');
+        },1000)
+    }
+  </script>
+
+  <body>
+    <div id="container" style="height: 500px;width:800px"></div>
+  </body>
+</html>

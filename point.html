@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Draco with js</title>
+  </head>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+    }
+    html, body, #wrap {
+      height: 100%;
+      width: 100%;
+    }
+  </style>
+
+  <script src="./three.min.js"></script>
+  <script src="./draco_encoder.js"></script>
+  <script src="./draco_decoder.js"></script>
+  <script src="./DRACOLoader.js"></script>
+  <script lang="ts" src="./data_block/point_cloud.ts"></script>
+
+  <script>
+          var camera, scene, renderer;
+
+          var dracoLoader = new THREE.DRACOLoader();
+
+          const vertices = [
+            -1.0, -1.0,  1.0, // v0
+            1.0, -1.0,  1.0, // v1
+            1.0,  1.0,  1.0, // v2
+
+            1.0,  1.0,  1.0, // v3
+            -1.0,  1.0,  1.0, // v4
+            -1.0, -1.0,  1.0  // v5
+          ]
+
+          async function encodeFun() {
+            const mesh = {
+              // indices : new Uint32Array(indices),
+              vertices : new Float32Array(vertices),
+              // normals : new Float32Array(normals)
+            };
+
+            const encoderModule = await DracoEncoderModule();
+            const encoder = new encoderModule.Encoder();
+            const meshBuilder = new encoderModule.MeshBuilder();
+            const dracoMesh = new encoderModule.Mesh();
+
+
+            const numPoints = mesh.vertices.length;
+
+            meshBuilder.AddFloatAttributeToMesh(dracoMesh, encoderModule.POSITION, numPoints, 3, mesh.vertices);
+
+            encoder.SetEncodingMethod(encoderModule.MESH_SEQUENTIAL_ENCODING);
+            // encoder.SetEncodingMethod(encoderModule.MESH_EDGEBREAKER_ENCODING)
+
+            const encodedData = new encoderModule.DracoInt8Array();
+            // Use default encoding setting.
+            const encodedLen = encoder.EncodeMeshToDracoBuffer(dracoMesh, encodedData);
+
+             // Copy encoded data to buffer.
+            const outputBuffer = new ArrayBuffer(encodedLen);
+            const outputData = new Int8Array(outputBuffer);
+            for (let i = 0; i < encodedLen; ++i) {
+              outputData[i] = encodedData.GetValue(i);
+            }
+
+            // console.log(dracoMesh, encodedData, outputBuffer, outputData)
+
+            // decodeFun(outputBuffer)
+            // decodeFun(encodedData)
+            encoderModule.destroy(dracoMesh);
+            encoderModule.destroy(encoder);
+            encoderModule.destroy(meshBuilder);
+          }
+
+
+          async function decodeFun(rawBuffer) {
+            const decoderModule = await DracoDecoderModule();
+
+            const buffer = new decoderModule.DecoderBuffer();
+            // buffer.Init(byteArray, byteArray.length);
+            buffer.Init(new Uint8Array(rawBuffer), rawBuffer.byteLength);
+
+            // Create a buffer to hold the encoded data.
+            const decoder = new decoderModule.Decoder();
+            const geometryType = decoder.GetEncodedGeometryType(buffer);
+
+            // Decode the encoded geometry.
+            let outputGeometry;
+            let status;
+            if (geometryType == decoderModule.TRIANGULAR_MESH) {
+              outputGeometry = new decoderModule.Mesh();
+              status = decoder.DecodeBufferToMesh(buffer, outputGeometry);
+            } else {
+              outputGeometry = new decoderModule.PointCloud();
+              status = decoder.DecodeBufferToPointCloud(buffer, outputGeometry);
+            }
+
+            console.log(geometryType,decoderModule.TRIANGULAR_MESH,outputGeometry)
+
+
+            const attributeIDs = {
+                  position: 'POSITION',
+                  intensity: 'GENERIC'
+                  // normal: 'NORMAL',
+                  // color: 'COLOR',
+                  // uv: 'TEX_COORD',
+
+                }
+            var geometry = { index: null, attributes: [] }
+            const attributeTypes = {
+              position: 'Float32Array',
+              normal: 'Float32Array',
+              color: 'Float32Array',
+              uv: 'Float32Array',
+              intensity: 'Uint16Array'
+            }
+            for (var attributeName in attributeIDs) {
+              var attributeType = attributeTypes[attributeName]
+
+              var attribute
+              var attributeID
+
+              // A Draco file may be created with default vertex attributes, whose attribute IDs
+              // are mapped 1:1 from their semantic name (POSITION, NORMAL, ...). Alternatively,
+              // a Draco file may contain a custom set of attributes, identified by known unique
+              // IDs. glTF files always do the latter, and `.drc` files typically do the former.
+              if (false) {
+                attributeID = attributeIDs[attributeName]
+                console.log(attributeID)
+                attribute = decoder.GetAttributeByUniqueId(outputGeometry, attributeID)
+              } else {
+                // attributeID = decoder.GetAttributeIdByMetadataEntry(outputGeometry, attributeName,0)
+                // attributeID = decoder.GetAttributeIdByName(outputGeometry, attributeName)
+                attributeID = decoder.GetAttributeId(outputGeometry, decoderModule[attributeIDs[attributeName]])
+
+                // if (attributeType === 'Uint16Array') {
+                //   attributeID = 1
+                // }
+                console.log(attributeID, decoderModule[attributeIDs[attributeName]], decoderModule.GENERIC)
+                if (attributeID === -1) continue
+                attribute = decoder.GetAttribute(outputGeometry, attributeID)
+                // attribute = GetAttributeByUniqueId(outputGeometry, 0)
+              }
+
+              if (attributeIDs[attributeName] === 'POSITION') {
+                geometry.attributes.push(decodeAttribute(decoderModule, decoder, outputGeometry, attributeName, attributeType, attribute))
+              } else {
+
+              }
+            }
+
+            // Add index.
+            if (geometryType === decoderModule.TRIANGULAR_MESH) {
+              // Generate mesh faces.
+              var numFaces = outputGeometry.num_faces()
+              var numIndices = numFaces * 3
+              var dataSize = numIndices * 4
+              var ptr = decoderModule._malloc(dataSize)
+              decoder.GetTrianglesUInt32Array(outputGeometry, dataSize, ptr)
+              var index = new Uint32Array(decoderModule.HEAPU32.buffer, ptr, numIndices).slice()
+              decoderModule._free(ptr)
+
+              geometry.index = { array: index, itemSize: 1 }
+            }
+
+            console.log(geometry)
+            const a = createGeometry(geometry)
+            genThreejs(a)
+
+            decoderModule.destroy(outputGeometry);
+            decoderModule.destroy(decoder);
+            decoderModule.destroy(buffer);
+          }
+
+
+          function decodeAttribute(draco, decoder, dracoGeometry, attributeName, attributeType, attribute) {
+            var numComponents = attribute.num_components()
+            var numPoints = dracoGeometry.num_points()
+            var numValues = numPoints * numComponents
+            var dracoArray
+            var ptr
+            var array
+
+            switch (attributeType) {
+              case 'Float32Array':
+                var dataSize = numValues * 4
+                ptr = draco._malloc(dataSize)
+                decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, draco.DT_FLOAT32, dataSize, ptr)
+                array = new Float32Array(draco.HEAPF32.buffer, ptr, numValues).slice()
+                draco._free(ptr)
+                break
+
+              case 'Int8Array':
+                ptr = draco._malloc(numValues)
+                decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, draco.DT_INT8, numValues, ptr)
+                array = new Int8Array(draco.HEAP8.buffer, ptr, numValues).slice()
+                draco._free(ptr)
+                break
+
+              case 'Int16Array':
+                var dataSize = numValues * 2
+                ptr = draco._malloc(dataSize)
+                decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, draco.DT_INT16, dataSize, ptr)
+                array = new Int16Array(draco.HEAP16.buffer, ptr, numValues).slice()
+                draco._free(ptr)
+                break
+
+              case 'Int32Array':
+                var dataSize = numValues * 4
+                ptr = draco._malloc(dataSize)
+                decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, draco.DT_INT32, dataSize, ptr)
+                array = new Int32Array(draco.HEAP32.buffer, ptr, numValues).slice()
+                draco._free(ptr)
+                break
+
+              case 'Uint8Array':
+                ptr = draco._malloc(numValues)
+                decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, draco.DT_UINT8, numValues, ptr)
+                array = new Uint8Array(draco.HEAPU8.buffer, ptr, numValues).slice()
+                draco._free(ptr)
+                break
+
+              case 'Uint16Array':
+                var dataSize = numValues * 2
+                ptr = draco._malloc(dataSize)
+                decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, draco.DT_UINT16, dataSize, ptr)
+                array = new Uint16Array(draco.HEAPU16.buffer, ptr, numValues).slice()
+                draco._free(ptr)
+                break
+
+              case 'Uint32Array':
+                var dataSize = numValues * 4
+                ptr = draco._malloc(dataSize)
+                decoder.GetAttributeDataArrayForAllPoints(dracoGeometry, attribute, draco.DT_UINT32, dataSize, ptr)
+                array = new Uint32Array(draco.HEAPU32.buffer, ptr, numValues).slice()
+                draco._free(ptr)
+                break
+
+              default:
+                throw new Error('THREE.DRACOLoader: Unexpected attribute type.')
+            }
+
+          return {
+            name: attributeName,
+            array: array,
+            itemSize: numComponents,
+          }
+        }
+
+
+          function genThreejs(geometry) {
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000)
+            camera.position.set(0, 0, 30)
+            // camera.lookAt(0, 0, 0)
+            // camera.up.set(0, 0, 1)
+
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color( 'white' );
+
+            // console.log(new THREE.Mesh(geometry))
+            // var material = new THREE.MeshStandardMaterial( { vertexColors: THREE.VertexColors } );
+            var material = new THREE.MeshStandardMaterial( { color: '#ffffff' } );
+            const materialp = new THREE.PointsMaterial({
+              size: 0.001,
+              // vertexColors: true,
+              // color: 0x888888
+              color: '#000000'
+            })
+            const _mp = new THREE.Points( geometry, materialp )
+            const _m = new THREE.Mesh( geometry, material )
+            _m.scale.set(0.1,0.1,0.1)
+            _mp.scale.set(0.2,0.2,0.2)
+            // scene.add(_m)
+            scene.add(_mp)
+            console.log(_mp)
+
+            // renderer
+            renderer = new THREE.WebGLRenderer();
+            // renderer.setPixelRatio( window.devicePixelRatio );
+            renderer.setSize( window.innerWidth, window.innerHeight );
+            // renderer.shadowMap.enabled = true;
+
+            const container = document.getElementById('wrap');
+            container.appendChild( renderer.domElement );
+
+            animate()
+          }
+
+
+          function createGeometry(geometryData) {
+            var geometry = new THREE.BufferGeometry()
+    
+            if (geometryData.index) {
+              geometry.setIndex(new THREE.BufferAttribute(geometryData.index.array, 1))
+            }
+
+            for (var i = 0; i < geometryData.attributes.length; i++) {
+              var attribute = geometryData.attributes[i]
+              var name = attribute.name
+              var array = attribute.array
+              var itemSize = attribute.itemSize
+
+              geometry.setAttribute(name, new THREE.BufferAttribute(array, itemSize))
+            }
+
+            return geometry
+          }
+
+          function downloadEncodedMesh(filename) {
+          // Download the encoded file.
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", filename, true);
+            xhr.responseType = "arraybuffer";
+            xhr.onload = function(event) {
+              const arrayBuffer = xhr.response;
+              if (arrayBuffer) {
+                console.log(arrayBuffer)
+                decodeFun(arrayBuffer)
+              }
+            };
+            xhr.send(null);
+          }
+
+          function downloadFlat(filename) {
+          // Download the encoded file.
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", filename, true);
+            xhr.responseType = "arraybuffer";
+            xhr.onload = function(event) {
+              const arrayBuffer = xhr.response;
+              if (arrayBuffer) {
+                console.log(arrayBuffer)
+                // decodeFun(arrayBuffer)
+              }
+            };
+            xhr.send(null);
+          }
+
+          function render() {
+            var timer = Date.now() * 0.0003;
+
+            // camera.position.x = Math.sin( timer ) * 0.5;
+            // camera.position.z = Math.cos( timer ) * 0.5;
+            // camera.lookAt( 0,0,0 );
+
+            renderer.render( scene, camera );
+          }
+
+          function animate() {
+            render();
+            requestAnimationFrame( animate );
+          }
+
+          window.onload = function() {
+            encodeFun()
+            // downloadEncodedMesh('bak.drc')
+            downloadEncodedMesh('output.drc')
+            // downloadFlat('bak.flat')
+              // decodeFun()
+          }
+  </script>
+
+  <body>
+    <div id="wrap"></div>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+// common header of all schema files
+namespace ld_data;
+
+table Header {
+sequence_id:
+    uint32;
+timestamp:
+    uint64;
+name:
+    string;
+}
